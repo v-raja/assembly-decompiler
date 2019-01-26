@@ -233,7 +233,7 @@ public class AssemblyDecompiler {
 
 	public static void main(String[] args) throws IOException {
 		if (args.length != 1) {
-			System.err.println("Usage: ");
+			System.err.println("Usage: java AssemblyDecompiler <String: file name>");
 		}
 		String file = args[0];
 		
