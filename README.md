@@ -11,3 +11,5 @@ To use:
 4) Convert assembly: type "java AssemblyDecompiler <String: file>" 
 
 Note: If file is another directory, pass in path with file name.
+
+Example assembly programs are from Shimon Schocken and Noam Nisan from nand2tetris.org
