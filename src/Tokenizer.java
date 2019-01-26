@@ -38,21 +38,13 @@ public class Tokenizer {
 		
 	}
 	
-	public String[] getTokens() {
-		return tokens.toArray(new String[tokens.size()]);
+	public ArrayList<String> getTokens() {
+		return tokens;
 	}
 	
 	public int getNumberTokens() {
 		return tokens.size();
 	}
 	
-	public static void main(String[] args) {
-		Tokenizer tokenizer = new Tokenizer("Add.asm");
-	    
-	    for (String token : tokenizer.getTokens()) {
-	    	System.out.println(token);
-	    }
-	    
-	}
 
 }

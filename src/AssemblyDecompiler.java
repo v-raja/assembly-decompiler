@@ -8,61 +8,132 @@ import java.util.HashMap;
 
 public class AssemblyDecompiler {
 	
-	private String[] instructions;
 	private Tokenizer tokenizer;
-	private String[] machineCode;
+	private ArrayList<String> machineCode;
 	private HashMap<String, Integer> symbols;
 	private int nextVariableAddress;
 	
 	public AssemblyDecompiler (String fname) {
-		nextVariableAddress = 16; 							// Initialise where new variable will be stored in memory
+		nextVariableAddress = 16; 						// Initialise where new variable will be stored in memory
 		tokenizer = new Tokenizer(fname);
-		instructions = tokenizer.getTokens();
 		symbols = new HashMap<String, Integer>();
-		populateSymbols(); 
-		machineCode = convertToMachineCode(instructions);
+		machineCode = new ArrayList<String>();
+		convertToMachineCode(tokenizer.getTokens());
+	}
+	
+	
+	private void convertToMachineCode(ArrayList<String> instructions) {
+		populatePreDefinedSymbols(); 
+		addSymbols(instructions);
+		convert(instructions);
 	}
 	
 	/**
-	 * Performs two runs on each line on assembly instructions:
-	 * First run:  Adds variables and location of loops in instructions to the HashMap symbols 
-	 * Second run: Passes each instruction to toMachineCode and adds it to String[] machineCode
-	 * @param instructions list of assembly instructions to convert
-	 * @return String array of binary 
+	 * Returns type of {instruction}
+	 * @param instruction An instruction in Hack Assembly language
+	 * @return Type of {instruction} according to Hack Assembly language specification
 	 */
-	private String[] convertToMachineCode(String[] instructions) {
-		ArrayList<String> machineCode = new ArrayList<String>();
-		int lineNumber = 0;
-		for (String instruction : instructions) {
-			addSymbol(instruction, lineNumber);
-			if (instruction.charAt(0) != '(') lineNumber++; 
+	private String getType(String instruction) {
+		if (instruction.charAt(0) == '(') return "LOOP_START";
+		if (instruction.charAt(0) == '@') {
+			String variable = instruction.substring(1);
+			if (variable.matches("\\d+")) return "ADDRESS";    						// check if "@d" where d is an integer
+			if (variable.equals(variable.toUpperCase())) return "LOOP_VARIABLE";	// check if "@VAR" where VAR is an upper-case variable name
+			return "VARIABLE";														// check if "@var" where var is an upper-case variable name
 		}
-		for (String instruction : instructions) {
-			if (instruction.charAt(0) != '(') {
-				machineCode.add(toMachineCode(instruction));
-			}
+		return "COMPUTATION";
+	}
+	
+	private void addSymbols(ArrayList<String> instructions) {
+		addSymbols(instructions, 0);
+	}
+	
+	private void addSymbols(ArrayList<String> instructions, int line_number) {
+		if (instructions.isEmpty()) return;
+		String instruction = instructions.get(0);
+		switch (getType(instruction)) {
+		case "VARIABLE":
+			addVariable(instruction);
+			break;
+		case "LOOP_START":
+			addLoopStart(instruction, line_number);
+			line_number--;
+			break;
+		default:
+			break;
 		}
-		return machineCode.toArray(new String[machineCode.size()]);
+		line_number++;
+		addSymbols(new ArrayList<String>(instructions.subList(1, instructions.size())), line_number);
 	}
 	
 	/**
-	 * Converts decimal to 16-bit long binary number
-	 * @param decimal decimal to be converted
-	 * @return 16-bit binary of decimal
+	 * Adds variable {variable} to symbols
+	 * @param instruction An instruction in assembly that represents a variable
+	 */
+	private void addVariable(String instruction) {
+		String variable = instruction.substring(1);
+		if (symbols.putIfAbsent(variable, nextVariableAddress) == null) nextVariableAddress++;
+	}
+	
+	/**
+	 * Adds variable {loop_variable} to symbols
+	 * @param instruction An instruction in assembly that represents the start of a loop
+	 * @param line_number The line number after the start of a loop is declared. When a loop variable is used, the program will jump to this line number.
+	 */
+	private void addLoopStart(String instruction, int line_number) {
+		String loop_variable = instruction.substring(instruction.indexOf('(') + 1, instruction.lastIndexOf(')'));
+		symbols.put(loop_variable, line_number);
+	}
+	
+	private void convert(ArrayList<String> instructions) {
+		if (instructions.isEmpty()) return;
+		String instruction = instructions.get(0);
+		switch (getType(instruction)) {
+		case "ADDRESS":
+		case "VARIABLE":
+		case "LOOP_VARIABLE":
+		case "COMPUTATION":
+			machineCode.add(toMachineCode(instruction));
+			break;
+		default:
+			break;
+		}
+		convert(new ArrayList<String>(instructions.subList(1, instructions.size())));
+	}
+
+	
+	/**
+	 * Converts {decimal} to 16-bit long binary number
+	 * @param decimal Decimal to be converted
+	 * @return 16-bit long binary representation of decimal
 	 */
 	private String to16BitBinary(int decimal) {
-		String binary = Integer.toBinaryString(decimal);
-		StringBuilder sb = new StringBuilder(binary);
-		int num_zeros = 16 - sb.length();
-		String zeros = String.join("", Collections.nCopies(num_zeros, "0"));
-		sb.insert(0, zeros);
-		return sb.toString();
+		return addZeros(toBinary(decimal));
 	}
 	
 	/**
-	 * Populates HashMap symbols with variables defined in the Hack language specifications
+	 * Returns binary representation of {decimal} 
+	 * @param decimal Decimal to be converted
+	 * @return Binary representation of {decimal}
 	 */
-	private void populateSymbols() {
+	private String toBinary(int decimal) {
+		return Integer.toBinaryString(decimal);
+	}
+	
+	/**
+	 * Adds zeros to make binary number 16-bits long
+	 * @param binary Binary representation of a decimal
+	 * @return 16-bit long binary representation of a decimal
+	 */
+	private String addZeros(String binary) {
+		if (binary.length() == 16) return binary;
+		return addZeros("0" + binary);
+	}
+	
+	/**
+	 * Populates HashMap symbols with variables defined in the Hack Assembly language specification
+	 */
+	private void populatePreDefinedSymbols() {
 		for (int i = 0; i <= 15; i++) {
 			symbols.put("R" + i, i);
 		}
@@ -76,122 +147,118 @@ public class AssemblyDecompiler {
 	}
 	
 	/**
-	 * Adds symbol in String assembly to HashMap symbols.
-	 * If String assembly is a variable, put it in symbols with value int nextVariableAddress.
-	 * If String assembly is a loop variable, put it symbols with value of int lineNumber.
-	 * @param assembly variable in assembly to be stored in String[] symbols. Starts with '@' or '(',
-	 * @param lineNumber the number of line in the instructions. Used only to store loop variables.
-	 */
-	private void addSymbol(String assembly, int lineNumber) {
-		if (assembly.charAt(0) == '(') {
-			symbols.put(assembly.substring(assembly.indexOf('(') + 1, assembly.lastIndexOf(')')), lineNumber);
-		}
-		String variable = assembly.substring(1);
-		if (variable.equals(variable.toUpperCase())) {
-			return;
-		} else {
-			symbols.putIfAbsent(variable, nextVariableAddress);
-			nextVariableAddress++;
-		}
-	}
-	
-	/**
-	 * Returns value of symbol from HashMap symbols
-	 * If key is not found, symbol must be an address 
-	 * @param symbol key to look up in HashMap symbols
-	 * @return value of String symbol from HashMap symbols. If key is not found, return integer of symbol.
+	 * Returns value of a variable or loop variable from HashMap {symbols}
+	 * @param symbol A variable or a loop variable
+	 * @return value of {symbol} in {symbols}
 	 */
 	private int getSymbolValue(String symbol) {
 		if (symbols.get(symbol) == null) {
-			return Integer.parseInt(symbol);
+			System.err.println("Cannot find symbol: " + symbol);
 		}
 		return symbols.get(symbol);
 	}
 	
 	/**
-	 * Converts String assembly to String binary by calling helper functions to decide binary of assembly.
-	 * @param assembly instruction in assembly to be converted
-	 * @return binary code of String assembly
+	 * Converts an assembly instruction to its binary representation as defined in the Hack Assembly language specification
+	 * @param instruction Instruction in assembly to be converted
+	 * @return binary representation of {instruction}
 	 */
-	private String toMachineCode(String assembly) {
-		if (assembly.charAt(0) == '@') {
-			return to16BitBinary(getSymbolValue(assembly.substring(1)));
-		} else {
-			boolean contains_dest = assembly.contains("=");
-			boolean contains_jump = assembly.contains(";");
-			int comp_end = contains_jump ? assembly.indexOf(';') : assembly.length();
-			int comp_start = contains_dest? assembly.indexOf('=') + 1 : 0;
-			char a_bit = assembly.substring(comp_start, comp_end).contains("M") ? '1' : '0';
-			String c_bits = getCompBits(assembly.substring(comp_start, comp_end));
-			String d_bits = getDestBits(assembly.substring(0, comp_start));
-			String j_bits = contains_jump ? getJumpBits(assembly.substring(comp_end + 1)) : "000";
-			return "111" + a_bit + c_bits + d_bits + j_bits;
+	private String toMachineCode(String instruction) {
+		switch (getType(instruction)) {
+		case "VARIABLE":
+		case "LOOP_VARIABLE":
+			return to16BitBinary(getSymbolValue(instruction.substring(1)));
+		case "ADDRESS":
+			return to16BitBinary(Integer.parseInt(instruction.substring(1)));
+		case "COMPUTATION":
+			boolean contains_dest = instruction.contains("=");
+			boolean contains_jump = instruction.contains(";");
+			int comp_end = contains_jump ? instruction.indexOf(';') : instruction.length();
+			int comp_start = contains_dest? instruction.indexOf('=') + 1 : 0;
+			String computation = instruction.substring(comp_start, comp_end);
+			String destination = instruction.substring(0, comp_start);
+			String jump;
+			try {
+				jump = instruction.substring(comp_end + 1); 
+			} catch (StringIndexOutOfBoundsException e) {
+				jump = "000";
+			}
+			return "111" + getABit(computation) + getCompBits(computation) + getDestBits(destination) + getJumpBits(jump);
+		case "LOOP_START":
+		default:
+			System.err.println("Invalid instruction: " + instruction);
+			return null;
 		}
 	}
 	
+	
+	private char getABit(String computation) {
+		return computation.contains("M") ? '1' : '0';
+	}
+	
 	/**
-	 * Returns the 6 c-bits according to computation (as specified in Hack language specification)
-	 * @param comp computation that occurs in an assembly instruction
-	 * @return binary of computation comp
+	 * Returns the 6 c-bits according to computation (as defined in Hack Assembly language specification)
+	 * @param comp Computation that occurs in an assembly instruction
+	 * @return Binary of computation {comp}
 	 */
 	private String getCompBits(String comp) {
 		switch (comp) {
-	        case "0":
-	            return "101010";
-	        case "1":
-	        	return "111111";
-	        case "-1":
-	        	return "111010";
-	        case "D":
-	        	return "001100";
-	        case "M":
-	        case "A":
-	        	return "110000";
-	        case "!D":
-	        	return "001101";
-	        case "!M":
-	        case "!A":
-	        	return "110001";
-	        case "-D":
-	        	return "001111";
-	        case "-M":
-	        case "-A":
-	        	return "110011";
-	        case "D+1":
-	        	return "011111";
-	        case "M+1":
-	        case "A+1":
-	        	return "110111";
-	        case "D-1":
-	        	return "001110";
-	        case "M-1":
-	        case "A-1":
-	        	return "110010";
-	        case "D+M":
-	        case "D+A":
-	        	return "000010";
-	        case "D-M":
-	        case "D-A":
-	        	return "010011";
-	        case "M-D":
-	        case "A-D":
-	        	return "000111";
-	        case "D&M":
-	        case "D&A":
-	        	return "000000";
-	        case "D|M":
-	        case "D|A":
-	        	return "010101";
-	        default:
-	            throw new IllegalArgumentException("Invalid computation: " + comp);
+        case "0":
+            return "101010";
+        case "1":
+        	return "111111";
+        case "-1":
+        	return "111010";
+        case "D":
+        	return "001100";
+        case "M":
+        case "A":
+        	return "110000";
+        case "!D":
+        	return "001101";
+        case "!M":
+        case "!A":
+        	return "110001";
+        case "-D":
+        	return "001111";
+        case "-M":
+        case "-A":
+        	return "110011";
+        case "D+1":
+        	return "011111";
+        case "M+1":
+        case "A+1":
+        	return "110111";
+        case "D-1":
+        	return "001110";
+        case "M-1":
+        case "A-1":
+        	return "110010";
+        case "D+M":
+        case "D+A":
+        	return "000010";
+        case "D-M":
+        case "D-A":
+        	return "010011";
+        case "M-D":
+        case "A-D":
+        	return "000111";
+        case "D&M":
+        case "D&A":
+        	return "000000";
+        case "D|M":
+        case "D|A":
+        	return "010101";
+        default:
+            throw new IllegalArgumentException("Invalid computation: " + comp);
 		}
 	}
 	
 	/**
-	 * Returns the 3 d-bits according to destination (as specified in Hack language specification)
+	 * Returns the 3 d-bits according to destination (as defined in Hack Assembly language specification)
 	 * M stands for MRegister, A for ARegister, and D for DRegister
-	 * @param dest destination of computation
-	 * @return binary of String dest
+	 * @param dest Destination of computation
+	 * @return binary representation of destination {dest}
 	 */
 	private String getDestBits(String dest) {
 		String writeM = dest.contains("M") ? "1" : "0";
@@ -201,32 +268,34 @@ public class AssemblyDecompiler {
 	}
 	
 	/**
-	 * Returns the 3 j-bits according to jump condition (as specified in Hack language specification)
-	 * @param jump condition of jump of assembly instruction
-	 * @return binary of String jump
+	 * Returns the 3 j-bits according to jump condition (as defined in Hack Assembly language specification)
+	 * @param jump Condition of jump of an instruction
+	 * @return binary representation of jump condition {jump}
 	 */
 	private String getJumpBits(String jump) {
 		switch (jump) {
-			case "JGT":
-				return "001";
-			case "JEQ":
-				return "010";
-			case "JGE":
-				return "011";
-			case "JLT":
-				return "100";
-			case "JNE":
-				return "101";
-			case "JLE":
-				return "110";
-			case "JMP":
-				return "111";
-			default:
-	            throw new IllegalArgumentException("Invalid jump: " + jump);
+		case "000":
+		return "000";
+		case "JGT":
+			return "001";
+		case "JEQ":
+			return "010";
+		case "JGE":
+			return "011";
+		case "JLT":
+			return "100";
+		case "JNE":
+			return "101";
+		case "JLE":
+			return "110";
+		case "JMP":
+			return "111";
+		default:
+            throw new IllegalArgumentException("Invalid jump: " + jump);
 		}
 	}
 	
-	public String[] getMachineCode() {
+	public ArrayList<String> getMachineCode() {
 		return machineCode;
 	}
 	
@@ -234,14 +303,16 @@ public class AssemblyDecompiler {
 	public static void main(String[] args) throws IOException {
 		if (args.length != 1) {
 			System.err.println("Usage: java AssemblyDecompiler <String: file name>");
+			return;
 		}
+		// Convert to machine code
 		String file = args[0];
+		ArrayList<String> machineCode = new AssemblyDecompiler(file).getMachineCode();
 		
-		String[] machineCode = new AssemblyDecompiler(file).getMachineCode();
+		// Write to file
 		String fname = file.substring(0, file.indexOf('.'));
 		FileWriter fileWriter = new FileWriter(fname + ".hack");
 		PrintWriter printWriter = new PrintWriter(fileWriter);
-		
 		for (String code : machineCode) {
 			printWriter.println(code);
 		}
