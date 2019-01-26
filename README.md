@@ -1,7 +1,8 @@
 # assembly-decompiler
 Convert Hack Assembly language instructions to binary
 
-Input(s): .asm file (Hack Assembly langugae program) Output(s): .hack file (Hack computer binary code)
+Input(s): .asm file (Hack Assembly langugae program) 
+Output(s): .hack file (Hack computer binary code)
 
 To use:
 
